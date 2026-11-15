@@ -1,6 +1,5 @@
 import { api } from '../api.js';
-import { ENUMS, audienceTone, can, liftTone } from '../config.js';
-import {
+import { ENUMS, audienceTone, can, liftTone } from '../config.js';import {
   badge,
   budgetBar,
   drawer,
@@ -18,7 +17,7 @@ import {
   toast,
 } from '../ui.js';
 
-const state = { campaignId: '', budget: '', allocation: null, loading: false };
+const state = { campaignId: '', budget: '', allocation: null, loading: false, gate: null };
 
 async function loadAllocation(view, ctx, campaigns) {
   const campaign = campaigns.find((item) => String(item.id) === String(state.campaignId)) || campaigns[0];
@@ -27,9 +26,11 @@ async function loadAllocation(view, ctx, campaigns) {
   try {
     const data = await api.get(`/api/campaigns/${campaign.id}/allocation`, { budget });
     state.campaignId = String(campaign.id);
+    state.gate = null;
     return data;
   } catch (err) {
-    toast(errorMessage(err), 'err');
+    state.gate = err.code === 'REFUND_UNRECONCILED' ? err : null;
+    if (!state.gate) toast(errorMessage(err), 'err');
     return null;
   }
 }
@@ -73,6 +74,16 @@ function historyTable(audiences) {
       { key: 'campaign_name', label: '活动' },
       { key: 'status', label: '状态', render: (row) => badge(audienceTone(row.status), row.status_label) },
       { key: 'member_count', label: '人数', className: 'num', render: (row) => fmtNum(row.member_count) },
+      {
+        key: 'net_amount',
+        label: '毛额 / 退款 / 净额',
+        className: 'num',
+        render: (row) =>
+          `${fmtMoney(row.gross_amount, 0)}<div class="mini muted">退 ${fmtMoney(row.refund_amount, 0)} · 净 ${fmtMoney(
+            row.net_amount,
+            0,
+          )}</div>`,
+      },
       { key: 'budget', label: '预算', className: 'num', render: (row) => fmtMoney(row.budget) },
       { key: 'spend', label: '实花', className: 'num', render: (row) => fmtMoney(row.spend) },
       { key: 'inc_orders', label: '预计增量', className: 'num', render: (row) => fmtNum(row.inc_orders) },
@@ -92,6 +103,7 @@ function openAudience(view, ctx, audience, campaigns) {
     body: `${kv([
       ['活动', esc(audience.campaign_name || '—')],
       ['名单人数', fmtNum(audience.member_count)],
+      ['订单毛额 / 退款 / 净额', `${fmtMoney(audience.gross_amount)} / ${fmtMoney(audience.refund_amount)} / <b>${fmtMoney(audience.net_amount)}</b>`],
       ['预算 / 实花', `${fmtMoney(audience.budget)} / ${fmtMoney(audience.spend)}`],
       ['预计增量单量', fmtNum(audience.inc_orders)],
       ['增量 GMV', fmtMoney(audience.inc_gmv)],
@@ -102,13 +114,14 @@ function openAudience(view, ctx, audience, campaigns) {
     ])}
     <h3 style="margin:14px 0 6px;font-size:0.95rem">分群预算分配</h3>
     <div class="table-wrap"><table class="data" style="min-width:0">
-      <thead><tr><th>分群</th><th>lift</th><th>人数</th><th>预算</th><th>增量</th><th>ROI</th></tr></thead>
+      <thead><tr><th>分群</th><th>lift</th><th>人数</th><th>预算</th><th>增量</th><th>增量 GMV</th><th>ROI</th></tr></thead>
       <tbody>${rows
         .filter((row) => row.status === 'allocated')
         .map(
           (row) => `<tr><td>${esc(row.segment_name)}</td><td class="mono">${fmtLift(row.lift)}</td>
             <td class="num">${fmtNum(row.allocated)}</td><td class="num">${fmtMoney(row.budget)}</td>
-            <td class="num">${fmtNum(row.inc_orders)}</td><td class="num">${Number(row.roi).toFixed(2)}</td></tr>`,
+            <td class="num">${fmtNum(row.inc_orders)}</td><td class="num">${fmtMoney(row.inc_gmv)}</td>
+            <td class="num">${Number(row.roi).toFixed(2)}</td></tr>`,
         )
         .join('')}</tbody></table></div>
     <div class="note" style="margin-top:10px">${esc(audience.note || '')}</div>`,
@@ -129,6 +142,10 @@ function openAudience(view, ctx, audience, campaigns) {
         close();
         await audiencesPage.render(view, ctx);
       } catch (err) {
+        if (err.code === 'REFUND_UNRECONCILED') {
+          toast('退款待核对：请先在「退款核对」完成核对，再确认名单', 'err');
+          return;
+        }
         toast(errorMessage(err), 'err');
       }
     });
@@ -138,6 +155,10 @@ function openAudience(view, ctx, audience, campaigns) {
       await api.download(`/api/exports/audiences.csv?audience_id=${audience.id}`, `${audience.audience_no}.csv`);
       toast('已开始下载名单明细');
     } catch (err) {
+      if (err.code === 'REFUND_UNRECONCILED' || err.status === 409) {
+        toast('退款待核对：导出已冻结，请先完成退款核对', 'err');
+        return;
+      }
       toast(errorMessage(err), 'err');
     }
   });
@@ -167,6 +188,7 @@ export const audiencesPage = {
     const campaign = campaigns.items.find((item) => String(item.id) === state.campaignId) || campaigns.items[0];
     const admin = can(ctx.user.role, 'audience:generate');
     const totals = allocation ? allocation.totals : null;
+    const gate = state.gate;
 
     view.innerHTML = `
       <section class="panel">
@@ -174,6 +196,22 @@ export const audiencesPage = {
           <h2>名单与提升度</h2>
           <span class="meta">${campaign.name} · ${campaign.status_label} · 券口径 ${campaign.channel}</span>
         </div>
+        ${
+          gate
+            ? `<div class="panel-body"><div class="recon-banner warn" data-testid="audience-gate">
+                <div>
+                  <span class="eyebrow">退款核对未完成</span>
+                  <div class="recon-status-line">${badge('warn', '待核对')}
+                    <b>${esc(gate.message)}</b>
+                  </div>
+                  <p class="note" style="margin:4px 0 0">
+                    批次 <span class="mono">${esc(gate.detail?.run_no || '—')}</span> 尚未核对，正式名单生成、确认与导出均已冻结。
+                  </p>
+                </div>
+                <div class="recon-actions"><a class="btn accent" href="#/reconciliation">去核对</a></div>
+              </div></div>`
+            : ''
+        }
         <div class="panel-body" style="display:grid;gap:12px">
           <div class="filter-bar">
             ${field({
@@ -193,7 +231,11 @@ export const audiencesPage = {
               attrs: 'step="100" min="1"',
             })}
             <button class="btn ghost" data-testid="preview" id="preview">重新试算</button>
-            ${admin ? '<button class="btn accent" id="generate" data-testid="generate">生成名单</button>' : '<span class="note">只读 / 专员角色只能试算与确认，不能生成</span>'}
+            ${
+              admin
+                ? `<button class="btn accent" id="generate" data-testid="generate" ${gate ? 'disabled' : ''}>生成名单</button>`
+                : '<span class="note">只读 / 专员角色只能试算与确认，不能生成</span>'
+            }
           </div>
           ${
             allocation
@@ -212,7 +254,9 @@ export const audiencesPage = {
                 totals.spend,
                 allocation.budget,
               )}</div>${allocationTable(allocation)}`
-            : '<div class="panel-body"><div class="empty"><div class="mark">没有可投分群</div><p>提高预算或先重算分群。</p></div></div>'
+            : gate
+              ? '<div class="panel-body"><div class="empty"><div class="mark">名单已冻结</div><p>退款批次核对完成后即可试算与生成。</p></div></div>'
+              : '<div class="panel-body"><div class="empty"><div class="mark">没有可投分群</div><p>提高预算或先重算分群。</p></div></div>'
         }
       </section>
 
@@ -264,7 +308,7 @@ export const audiencesPage = {
         button.textContent = '生成名单';
       }
     });
-    view.querySelectorAll('table.data tbody tr').forEach((row) => {
+    view.querySelectorAll('#audience-history table.data tbody tr').forEach((row) => {
       const audience = history.items.find((item) => String(item.id) === row.dataset.id);
       if (audience) {
         row.addEventListener('click', () => openAudience(view, ctx, audience, campaigns.items));

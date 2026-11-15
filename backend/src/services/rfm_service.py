@@ -4,8 +4,8 @@
 
 1. 单人指标（以快照日 as_of 为基准）：
    - R = as_of − 最近一次下单日期（天）；从未下单记 9999。
-   - F = 窗口内（默认近 180 天）订单数。
-   - M = 窗口内订单金额合计。
+   - F = 窗口内（默认近 365 天）订单数。
+   - M = 窗口内订单金额合计 **减去已核对退款**（净额；晚到 / 重复退款由核对批次统一冲减）。
 2. 分位切档：对全量会员的 R / F / M 各算 20/40/60/80 分位（线性插值），
    按值落在第几档给 1-5 分；**同值必然同档**（只与分位阈值比较，不做名次排序）。
    R 越小越好 → 档位反向（最低一档给 5 分）。
@@ -13,6 +13,7 @@
 4. 八类规则分群：按 SEGMENT_ORDER 顺序首次命中（规则文本见 constants/enums.py）。
 5. 分群购买率 = 群内会员历史券响应率均值；大盘购买率 = 全量均值；
    lift = 分群购买率 / 大盘购买率（保留 2 位）。
+6. 分群同时汇总毛额 / 退款额 / 净额：高退款会员按净额落档，不会凭成交额虚高进高分群。
 """
 from __future__ import annotations
 
@@ -135,7 +136,10 @@ def compute(
 
     recency = [_recency_days(item.get("last_order_on"), as_of) for item in members]
     freq = [int(item.get("orders") or 0) for item in members]
-    money = [round(float(item.get("amount") or 0.0), 2) for item in members]
+    gross = [round(float(item.get("gross") if item.get("gross") is not None else item.get("amount") or 0.0), 2) for item in members]
+    refund = [round(float(item.get("refund") or 0.0), 2) for item in members]
+    # M 分与分群金额一律使用净额；毛额仅用于对账展示，不参与落档
+    money = [round(gross[index] - refund[index], 2) for index in range(len(members))]
 
     thresholds_r = percentiles(recency)
     thresholds_f = percentiles(freq)
@@ -154,6 +158,8 @@ def compute(
             "member_no": item.get("member_no"),
             "r_days": recency[index],
             "orders": freq[index],
+            "gross": gross[index],
+            "refund": refund[index],
             "amount": money[index],
             "r_score": r_score,
             "f_score": f_score,
@@ -180,8 +186,12 @@ def compute(
             avg_m = sum(row["m_score"] for row in bucket) / count
             avg_days = sum(row["r_days"] for row in bucket) / count
             avg_amount = sum(row["amount"] for row in bucket) / count
+            bucket_gross = round(sum(row["gross"] for row in bucket), 2)
+            bucket_refund = round(sum(row["refund"] for row in bucket), 2)
+            bucket_net = round(sum(row["amount"] for row in bucket), 2)
         else:
             rate = avg_ticket = avg_r = avg_f = avg_m = avg_days = avg_amount = 0.0
+            bucket_gross = bucket_refund = bucket_net = 0.0
         lift = round(rate / global_rate, 4) if global_rate > 0 else 0.0
         segments.append(
             {
@@ -195,6 +205,9 @@ def compute(
                 "avg_f_score": round(avg_f, 2),
                 "avg_m_score": round(avg_m, 2),
                 "avg_r_days": round(avg_days, 1),
+                "gross_amount": bucket_gross,
+                "refund_amount": bucket_refund,
+                "net_amount": bucket_net,
                 "avg_amount_window": round(avg_amount, 2),
                 "purchase_rate": round(rate, 6),
                 "avg_ticket": round(avg_ticket, 2),
@@ -205,6 +218,8 @@ def compute(
     totals = {
         "members": total_members,
         "orders": sum(freq),
+        "gross": round(sum(gross), 2),
+        "refund": round(sum(refund), 2),
         "amount": round(sum(money), 2),
     }
     top = max(segments, key=lambda item: (item["lift"], item["member_count"]))
@@ -244,6 +259,9 @@ def _empty_segments() -> list[dict]:
             "avg_f_score": 0.0,
             "avg_m_score": 0.0,
             "avg_r_days": 0.0,
+            "gross_amount": 0.0,
+            "refund_amount": 0.0,
+            "net_amount": 0.0,
             "avg_amount_window": 0.0,
             "purchase_rate": 0.0,
             "avg_ticket": 0.0,
@@ -270,6 +288,8 @@ def persist(db: Session, result: dict, *, window_days: int, as_of: date, snapsho
                     "id": row["id"],
                     "r_days": row["r_days"],
                     "orders_window": row["orders"],
+                    "gross_window": row["gross"],
+                    "refund_window": row["refund"],
                     "amount_window": row["amount"],
                     "r_score": row["r_score"],
                     "f_score": row["f_score"],
@@ -300,6 +320,9 @@ def persist(db: Session, result: dict, *, window_days: int, as_of: date, snapsho
         segment.avg_f_score = row["avg_f_score"]
         segment.avg_m_score = row["avg_m_score"]
         segment.avg_r_days = row["avg_r_days"]
+        segment.gross_amount = row["gross_amount"]
+        segment.refund_amount = row["refund_amount"]
+        segment.net_amount = row["net_amount"]
         segment.avg_amount_window = row["avg_amount_window"]
         segment.purchase_rate = row["purchase_rate"]
         segment.avg_ticket = row["avg_ticket"]

@@ -28,7 +28,7 @@ def members_csv(db: Session) -> bytes:
     ).all()
     headers = [
         "会员号", "姓名", "手机号", "城市", "会员等级", "入会日期", "最近下单",
-        "R(天)", "窗口内单数", "窗口内金额", "R分", "F分", "M分", "综合分",
+        "R(天)", "窗口内单数", "窗口内毛额", "窗口内退款", "窗口内净额", "R分", "F分", "M分", "综合分",
         "分群", "历史券响应率", "客单价",
     ]
     payload = [
@@ -39,6 +39,8 @@ def members_csv(db: Session) -> bytes:
             _stamp(item.last_order_at),
             item.r_days if item.r_days is not None else "",
             item.orders_window,
+            f"{item.gross_window or 0:.2f}",
+            f"{item.refund_window or 0:.2f}",
             f"{item.amount_window or 0:.2f}",
             item.r_score if item.r_score is not None else "",
             item.f_score if item.f_score is not None else "",
@@ -57,13 +59,15 @@ def segments_csv(db: Session) -> bytes:
     rows = db.scalars(select(Segment).order_by(Segment.sort_order, Segment.id)).all()
     headers = [
         "分群编码", "分群", "规则", "人数", "占比", "平均R分", "平均F分", "平均M分",
-        "平均R天数", "人均窗口金额", "购买率", "lift", "券面额", "核心盘占比", "启用",
+        "平均R天数", "订单毛额", "退款额", "净额", "人均窗口净额", "购买率", "lift", "券面额", "核心盘占比", "启用",
     ]
     payload = [
         [
             item.code, item.name, item.rule_text, item.member_count, f"{(item.share or 0) * 100:.2f}%",
             f"{item.avg_r_score or 0:.2f}", f"{item.avg_f_score or 0:.2f}", f"{item.avg_m_score or 0:.2f}",
-            f"{item.avg_r_days or 0:.1f}", f"{item.avg_amount_window or 0:.2f}",
+            f"{item.avg_r_days or 0:.1f}", f"{item.gross_amount or 0:.2f}", f"{item.refund_amount or 0:.2f}",
+            f"{item.net_amount or 0:.2f}",
+            f"{item.avg_amount_window or 0:.2f}",
             f"{(item.purchase_rate or 0) * 100:.2f}%", f"{item.lift or 0:.4f}",
             f"{item.coupon_face or 0:.2f}", f"{item.core_share or 0:.2f}",
             "启用" if item.enabled else "停用",
@@ -81,8 +85,8 @@ def audience_csv(db: Session, audience_id: int | None = None) -> bytes:
     campaigns = {item.id: item for item in db.scalars(select(Campaign)).all()}
     headers = [
         "名单号", "活动", "名单状态", "分群", "分群lift", "会员号", "姓名", "手机号", "城市",
-        "会员等级", "R分", "F分", "M分", "综合分", "历史券响应率", "该群分到人数", "该群预算",
-        "该群预计增量单量", "该群ROI",
+        "会员等级", "R分", "F分", "M分", "综合分", "历史券响应率", "订单毛额", "订单退款额", "订单净额",
+        "该群分到人数", "该群预算", "该群预计增量单量", "该群预计增量GMV", "该群ROI",
     ]
     payload: list[list] = []
     for audience in audiences:
@@ -92,12 +96,19 @@ def audience_csv(db: Session, audience_id: int | None = None) -> bytes:
         for row in audience.allocation or []:
             if row.get("status") != "allocated" or not row.get("allocated"):
                 continue
-            members = db.scalars(
-                select(Member)
-                .where(Member.segment_code == row["segment_code"])
-                .order_by(Member.composite_score.desc().nullslast(), Member.id)
-                .limit(int(row["allocated"]))
-            ).all()
+            member_ids = row.get("member_ids") or []
+            if member_ids:
+                members = db.scalars(select(Member).where(Member.id.in_([int(item) for item in member_ids]))).all()
+                order = {int(item): position for position, item in enumerate(member_ids)}
+                members = sorted(members, key=lambda item: order.get(item.id, 10**9))
+            else:
+                # 兼容旧名单：没有落会员 id 时按分群综合分倒序取配额
+                members = db.scalars(
+                    select(Member)
+                    .where(Member.segment_code == row["segment_code"])
+                    .order_by(Member.composite_score.desc().nullslast(), Member.id)
+                    .limit(int(row["allocated"]))
+                ).all()
             for member in members:
                 payload.append(
                     [
@@ -109,8 +120,12 @@ def audience_csv(db: Session, audience_id: int | None = None) -> bytes:
                         member.r_score, member.f_score, member.m_score,
                         f"{member.composite_score or 0:.2f}",
                         f"{(member.purchase_rate or 0) * 100:.2f}%",
+                        f"{member.gross_window or 0:.2f}",
+                        f"{member.refund_window or 0:.2f}",
+                        f"{member.amount_window or 0:.2f}",
                         row.get("allocated", 0), f"{row.get('budget', 0):.2f}",
-                        row.get("inc_orders", 0), f"{row.get('roi', 0):.2f}",
+                        row.get("inc_orders", 0), f"{row.get('inc_gmv', 0):.2f}",
+                        f"{row.get('roi', 0):.2f}",
                     ]
                 )
                 if len(payload) >= MAX_EXPORT_ROWS:

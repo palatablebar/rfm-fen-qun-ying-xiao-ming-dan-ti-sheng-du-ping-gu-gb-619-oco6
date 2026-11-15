@@ -28,8 +28,9 @@ export const NAV = [
   { to: '#/overview', no: '01', label: '总览', permission: 'overview:read' },
   { to: '#/members', no: '02', label: '会员与订单', permission: 'member:read' },
   { to: '#/segments', no: '03', label: 'RFM 分群', permission: 'segment:read' },
-  { to: '#/audiences', no: '04', label: '名单与提升度', permission: 'audience:read' },
-  { to: '#/exports', no: '05', label: '导出与审计', permission: 'member:read' },
+  { to: '#/reconciliation', no: '04', label: '退款核对', permission: 'refund:read' },
+  { to: '#/audiences', no: '05', label: '名单与提升度', permission: 'audience:read' },
+  { to: '#/exports', no: '06', label: '导出与审计', permission: 'member:read' },
 ];
 
 export const ROLE_LABELS = {
@@ -42,13 +43,19 @@ export const PERMISSIONS = {
   admin: [
     'overview:read', 'member:read', 'order:read', 'segment:read', 'segment:recompute', 'segment:write',
     'campaign:read', 'campaign:write', 'audience:read', 'audience:generate', 'audience:confirm',
+    'refund:read', 'refund:reconcile',
     'export:read', 'audit:read',
   ],
   analyst: [
     'overview:read', 'member:read', 'order:read', 'segment:read', 'campaign:read',
-    'audience:read', 'audience:confirm', 'export:read',
+    'audience:read', 'audience:confirm',
+    'refund:read', 'refund:reconcile',
+    'export:read',
   ],
-  viewer: ['overview:read', 'member:read', 'order:read', 'segment:read', 'campaign:read', 'audience:read'],
+  viewer: [
+    'overview:read', 'member:read', 'order:read', 'segment:read', 'campaign:read',
+    'audience:read', 'refund:read',
+  ],
 };
 
 export const ENUMS = {
@@ -101,6 +108,17 @@ export const ENUMS = {
     deferred: '预算不足',
     ineligible: 'lift≤1 不投',
   },
+  refundStatus: {
+    pending: '待核对',
+    applied: '已冲减',
+    duplicate: '重复回传（未冲减）',
+    unattributable: '无法归属',
+    over_refund: '累计超过原单',
+  },
+  reconciliationStatus: {
+    pending: '待核对',
+    confirmed: '已核对',
+  },
   windowDays: [
     { value: 90, label: '近 90 天' },
     { value: 180, label: '近 180 天' },
@@ -128,6 +146,20 @@ export function segmentTone(code) {
 
 export function audienceTone(status) {
   return { pending: 'pending warn', confirmed: 'ok', pushed: 'info' }[status] || 'info';
+}
+
+export function reconciliationTone(status) {
+  return { pending: 'warn', confirmed: 'ok' }[status] || '';
+}
+
+export function refundTone(status) {
+  return {
+    pending: 'pending warn',
+    applied: 'ok',
+    duplicate: 'info',
+    unattributable: 'danger',
+    over_refund: 'danger',
+  }[status] || '';
 }
 
 export function liftTone(lift) {

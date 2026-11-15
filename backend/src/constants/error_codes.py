@@ -7,6 +7,7 @@ ERROR_ACTIONS: dict[str, str] = {
     "NOT_FOUND": "回列表并提示资源已删除",
     "VALIDATION": "高亮非法字段",
     "CONFLICT": "提示刷新后重试",
+    "REFUND_UNRECONCILED": "跳转「退款核对」完成核对后再操作",
     "RATE_LIMITED": "提示稍后重试并禁用提交按钮 3 秒",
     "INTERNAL": "展示可重试错误态",
 }

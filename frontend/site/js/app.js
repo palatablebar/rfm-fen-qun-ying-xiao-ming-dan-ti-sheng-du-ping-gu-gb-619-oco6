@@ -6,6 +6,7 @@ import loginPage from './pages/login.js';
 import overviewPage from './pages/overview.js';
 import membersPage from './pages/members.js';
 import segmentsPage from './pages/segments.js';
+import reconciliationPage from './pages/reconciliation.js';
 import audiencesPage from './pages/audiences.js';
 import exportsPage from './pages/exports.js';
 
@@ -13,6 +14,7 @@ const routes = [
   { path: '#/overview', page: overviewPage, permission: 'overview:read' },
   { path: '#/members', page: membersPage, permission: 'member:read' },
   { path: '#/segments', page: segmentsPage, permission: 'segment:read' },
+  { path: '#/reconciliation', page: reconciliationPage, permission: 'refund:read' },
   { path: '#/audiences', page: audiencesPage, permission: 'audience:read' },
   { path: '#/exports', page: exportsPage, permission: 'member:read' },
 ];

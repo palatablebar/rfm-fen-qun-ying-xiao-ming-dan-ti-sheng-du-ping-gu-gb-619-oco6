@@ -1,6 +1,7 @@
 import { api } from '../api.js';
 import { ENUMS, liftTone } from '../config.js';
 import {
+  badge,
   barList,
   emptyState,
   errorBox,
@@ -41,14 +42,35 @@ export const overviewPage = {
     const snapshot = data.snapshot || {};
     const budget = data.budget_total || 0;
     const p0 = snapshot.global_purchase_rate || 0;
+    const recon = data.reconciliation || {};
     view.innerHTML = `
+      ${
+        recon.status === 'pending'
+          ? `<div class="recon-banner warn" data-testid="overview-recon">
+              <div>
+                <span class="eyebrow">退款核对未完成</span>
+                <div class="recon-status-line">${badge('warn', '待核对')}
+                  <b>批次 ${esc(recon.pending_run?.run_no || '—')} 尚未核对，分群与名单口径冻结</b>
+                </div>
+                <p class="note" style="margin:4px 0 0">
+                  晚到退款 ${fmtNum(recon.pending_run?.record_count || 0)} 条 · 已冲减 ${fmtMoney(
+                    recon.pending_run?.refund_amount || 0,
+                  )} · 异常 ${fmtNum(recon.pending_run?.exception_count || 0)} 条
+                </p>
+              </div>
+              <div class="recon-actions"><a class="btn accent" href="#/reconciliation">去核对</a></div>
+            </div>`
+          : ''
+      }
       <section class="hero">
         <div class="hero-main">
           <div class="eyebrow">会员资产总览 · 快照 ${esc((data.as_of || '').slice(0, 10) || '—')}</div>
           <div class="big">${fmtNum(data.members_total)}<small>位会员</small></div>
           <div class="rule-chipline">
             <span class="rule-chip">订单 ${fmtNum(data.orders_total)} 单</span>
-            <span class="rule-chip">累计 GMV ${fmtMoney(data.gmv_total, 0)}</span>
+            <span class="rule-chip">毛额 ${fmtMoney(data.gross_total, 0)}</span>
+            <span class="rule-chip">退款 ${fmtMoney(data.refund_total, 0)}</span>
+            <span class="rule-chip">净额 ${fmtMoney(data.net_total, 0)}</span>
             <span class="rule-chip">近 30 天 ${fmtNum(data.orders_30d)} 单</span>
             <span class="rule-chip">大盘购买率 ${fmtPct(p0)}</span>
           </div>
@@ -81,7 +103,7 @@ export const overviewPage = {
         { label: '会员数', value: fmtNum(data.members_total), hint: '32 万会员的 1/40 抽样' },
         { label: '可投分群', value: data.segments.filter((item) => item.lift > 1 && item.member_count > 0).length, hint: 'lift > 1 且有人' },
         { label: '最高 lift', value: fmtLift(Math.max(...data.segments.map((item) => item.lift || 0))), hint: '分群购买率 / 大盘' },
-        { label: '后台任务', value: data.worker_alive ? '在岗' : '心跳超时', hint: 'Celery 每日重算' },
+        { label: '退款核对', value: recon.status === 'confirmed' ? '已核对' : '待核对', hint: '未核对不进正式分群' },
       ])}
 
       <section class="panel">
@@ -117,7 +139,7 @@ export const overviewPage = {
         <div class="panel-body">
           <div class="table-wrap">
             <table class="data seg-table">
-              <thead><tr><th>分群</th><th>人数</th><th>占比</th><th>购买率</th><th>lift</th><th>券面额</th></tr></thead>
+              <thead><tr><th>分群</th><th>人数</th><th>占比</th><th>购买率</th><th>lift</th><th>毛额 / 净额</th><th>券面额</th></tr></thead>
               <tbody>
                 ${data.segments
                   .map(
@@ -127,6 +149,7 @@ export const overviewPage = {
                       <td class="num">${fmtPct(item.share, 1)}</td>
                       <td class="num">${fmtPct(item.purchase_rate)}</td>
                       <td class="num"><span class="lift-pill ${liftTone(item.lift)}">${fmtLift(item.lift)}</span></td>
+                      <td class="num">${fmtMoney(item.gross_amount, 0)}<div class="mini muted">净 ${fmtMoney(item.net_amount, 0)}</div></td>
                       <td class="num">${fmtMoney(item.coupon_face, 0)}</td>
                     </tr>`,
                   )

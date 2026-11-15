@@ -120,6 +120,43 @@ ORDER_CHANNEL_LABELS: dict[str, str] = {
 }
 
 
+class RefundStatus(StrEnum):
+    """退款记录的单行处置结果（异常单独列出，重复不冲减）。"""
+
+    PENDING = "pending"  # 待核对：校验通过、计划冲减，批次确认后才落为 applied
+    APPLIED = "applied"  # 已冲减，计入净额
+    DUPLICATE = "duplicate"  # 同一笔重复回传，不重复冲减
+    UNATTRIBUTABLE = "unattributable"  # 无法归属（订单号不存在 / 会员不一致 / 金额非法）
+    OVER_REFUND = "over_refund"  # 累计超过原单，超出部分列异常
+
+
+REFUND_STATUS_LABELS: dict[str, str] = {
+    RefundStatus.PENDING.value: "待核对（将冲减）",
+    RefundStatus.APPLIED.value: "已冲减",
+    RefundStatus.DUPLICATE.value: "重复回传（未冲减）",
+    RefundStatus.UNATTRIBUTABLE.value: "无法归属",
+    RefundStatus.OVER_REFUND.value: "累计超过原单",
+}
+
+REFUND_EXCEPTION_STATUSES: tuple[str, ...] = (
+    RefundStatus.UNATTRIBUTABLE.value,
+    RefundStatus.OVER_REFUND.value,
+)
+
+
+class ReconciliationStatus(StrEnum):
+    """一次退款核对批次的状态。"""
+
+    PENDING = "pending"
+    CONFIRMED = "confirmed"
+
+
+RECONCILIATION_STATUS_LABELS: dict[str, str] = {
+    ReconciliationStatus.PENDING.value: "待核对",
+    ReconciliationStatus.CONFIRMED.value: "已核对",
+}
+
+
 class TriggerKind(StrEnum):
     MANUAL = "manual"
     SCHEDULE = "schedule"

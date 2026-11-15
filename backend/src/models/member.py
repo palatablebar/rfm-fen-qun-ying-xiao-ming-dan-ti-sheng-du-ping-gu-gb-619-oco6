@@ -25,6 +25,9 @@ class Member(Base):
     joined_on: Mapped[date] = mapped_column(Date)
     last_order_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     orders_window: Mapped[int] = mapped_column(Integer, default=0)
+    # 窗口内订单毛额 / 已核对退款 / 净额（M 分与增量 GMV 一律用净额）
+    gross_window: Mapped[float] = mapped_column(Float, default=0.0)
+    refund_window: Mapped[float] = mapped_column(Float, default=0.0)
     amount_window: Mapped[float] = mapped_column(Float, default=0.0)
     # 历史券响应率（近 3 次同类活动的人均核销口径），提升度算法 B 的购买率来源
     purchase_rate: Mapped[float] = mapped_column(Float, default=0.0)

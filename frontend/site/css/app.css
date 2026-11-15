@@ -1175,3 +1175,68 @@ pre.code {
     grid-template-columns: 1fr;
   }
 }
+
+/* ---------- 退款核对：状态横幅 / 逐项对账 / 冻结态 ---------- */
+.recon-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  border: 1px solid var(--rule-strong);
+  border-left-width: 4px;
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  background: var(--paper-2);
+}
+
+.recon-banner.ok {
+  border-left-color: var(--ok);
+  background: var(--ok-wash);
+}
+
+.recon-banner.warn {
+  border-left-color: var(--warn);
+  background: var(--warn-wash);
+}
+
+.recon-status-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+  font-size: var(--fs-md);
+}
+
+.recon-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+  align-items: center;
+}
+
+.recon-table td {
+  vertical-align: top;
+}
+
+.recon-table .recon-value {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  min-width: 260px;
+  border-bottom: 1px dashed var(--rule);
+  padding: 2px 0;
+}
+
+.recon-table .recon-value:last-child {
+  border-bottom: 0;
+}
+
+.recon-table .danger {
+  color: var(--danger);
+}
+
+.mini {
+  font-size: var(--fs-xs);
+  line-height: 1.4;
+}

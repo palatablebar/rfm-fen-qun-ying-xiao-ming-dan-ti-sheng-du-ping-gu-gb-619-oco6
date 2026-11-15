@@ -92,3 +92,25 @@ SEED_AUDIENCES = [
     ("seed-audience-autumn", "autumn-member-day", "init 抽样名单：预算受限，按 lift/成本 贪心选群"),
     ("seed-audience-double11", "double11-warmup", "init 抽样名单：预算充足，覆盖全部可投分群"),
 ]
+
+# 退款回传演示：wk45 已核对（历史冲减），wk46 晚到待核对（含重复 / 无法归属 / 累计超额）
+REFUND_CONFIRMED_BATCH = {
+    "batch_key": "seed-refund-wk45",
+    "note": "上周券核销退款回传，已核对落账",
+    "order_offset": 1200,
+    "count": 36,
+    "ratio": 0.25,
+    "days_ago": (18, 12),
+}
+
+REFUND_PENDING_BATCH = {
+    "batch_key": "seed-refund-wk46",
+    "note": "本周晚到退款回传：跨周补传 + 同笔重试，待核对",
+    "order_offset": 2200,
+    "count": 22,
+    "ratio": 0.30,
+    "days_ago": (6, 1),
+    "duplicate_from": ("seed-refund-wk45", 2),
+    "unknown_order_no": "MYO999999",
+}
+

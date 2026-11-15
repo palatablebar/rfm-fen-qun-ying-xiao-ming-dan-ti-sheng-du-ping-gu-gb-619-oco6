@@ -21,21 +21,21 @@ const EXPORTS = [
     path: '/api/exports/members.csv',
     filename: 'members.csv',
     title: '会员名单（含 RFM 得分与分群）',
-    hint: '7 列以上：会员号 / 手机号 / 窗口单数与金额 / R-F-M 得分 / 综合分 / 分群 / 券响应率',
+    hint: '会员号 / 手机号 / 窗口单数与毛额、退款、净额 / R-F-M 得分 / 综合分 / 分群 / 券响应率',
   },
   {
     id: 'segments',
     path: '/api/exports/segments.csv',
     filename: 'segments.csv',
     title: '分群表（含 lift 与券口径）',
-    hint: '八类分群的人数、占比、平均 RFM、购买率、lift、券面额、核心盘占比',
+    hint: '八类分群的订单毛额 / 退款 / 净额、人数、平均 RFM、购买率、lift、券面额',
   },
   {
     id: 'audiences',
     path: '/api/exports/audiences.csv',
     filename: 'audience.csv',
     title: '名单明细（推券平台用）',
-    hint: '按名单的分群配额展开到会员级，带该群 lift / 预算 / 预计增量，便于回算',
+    hint: '按名单分群配额展开到会员级，带订单毛额 / 退款 / 净额与预计增量，便于回算',
   },
 ];
 
@@ -45,10 +45,16 @@ export const exportsPage = {
     const canAudit = can(ctx.user.role, 'audit:read');
     let segments = { items: [] };
     let audit = null;
+    let reconciliation = null;
     try {
       segments = await api.get('/api/segments');
     } catch (err) {
       toast(errorMessage(err), 'err');
+    }
+    try {
+      reconciliation = await api.get('/api/reconciliations/summary');
+    } catch (err) {
+      reconciliation = null;
     }
     if (canAudit) {
       try {
@@ -59,6 +65,20 @@ export const exportsPage = {
     }
 
     view.innerHTML = `
+      ${
+        reconciliation && reconciliation.status === 'pending'
+          ? `<div class="recon-banner warn" data-testid="export-gate">
+              <div>
+                <span class="eyebrow">退款核对未完成</span>
+                <div class="recon-status-line">${badge('warn', '待核对')}
+                  <b>批次 ${esc(reconciliation.pending_run?.run_no || '—')} 尚未核对，三类导出全部冻结</b>
+                </div>
+                <p class="note" style="margin:4px 0 0">核对完成后，导出会按核对后的毛额 / 退款 / 净额重新生成。</p>
+              </div>
+              <div class="recon-actions"><a class="btn accent" href="#/reconciliation">去核对</a></div>
+            </div>`
+          : ''
+      }
       <section class="panel">
         <div class="panel-head">
           <h2>导出中心</h2>
@@ -71,9 +91,17 @@ export const exportsPage = {
                 <div class="panel-head" style="padding:10px 14px"><h2 style="font-size:1rem">${esc(item.title)}</h2></div>
                 <div class="panel-body" style="display:grid;gap:10px">
                   <p class="note" style="margin:0">${esc(item.hint)}</p>
-                  <button class="btn ${canExport ? 'accent' : 'ghost'}" data-export="${item.id}"
-                    data-path="${item.path}" data-filename="${item.filename}" ${canExport ? '' : 'disabled'}>
-                    ${canExport ? '下载 CSV' : '无导出权限'}
+                  <button class="btn ${canExport && !(reconciliation && reconciliation.status === 'pending') ? 'accent' : 'ghost'}" data-export="${item.id}"
+                    data-path="${item.path}" data-filename="${item.filename}" ${
+                      canExport && !(reconciliation && reconciliation.status === 'pending') ? '' : 'disabled'
+                    }>
+                    ${
+                      !canExport
+                        ? '无导出权限'
+                        : reconciliation && reconciliation.status === 'pending'
+                          ? '退款待核对 · 已冻结'
+                          : '下载 CSV'
+                    }
                   </button>
                 </div>
               </div>`,
@@ -99,6 +127,16 @@ export const exportsPage = {
             { key: 'name', label: '分群', render: (row) => `<b>${esc(row.name)}</b>` },
             { key: 'rule_text', label: '规则', render: (row) => `<span class="mono muted">${esc(row.rule_text)}</span>` },
             { key: 'member_count', label: '人数', className: 'num', render: (row) => fmtNum(row.member_count) },
+            {
+              key: 'net_amount',
+              label: '毛额 / 退款 / 净额',
+              className: 'num',
+              render: (row) =>
+                `${fmtMoney(row.gross_amount, 0)}<div class="mini muted">退 ${fmtMoney(row.refund_amount, 0)} · 净 ${fmtMoney(
+                  row.net_amount,
+                  0,
+                )}</div>`,
+            },
             { key: 'purchase_rate', label: '购买率', className: 'num', render: (row) => fmtPct(row.purchase_rate) },
             { key: 'lift', label: 'lift', className: 'num', render: (row) => fmtLift(row.lift) },
             { key: 'coupon_face', label: '券面额', className: 'num', render: (row) => fmtMoney(row.coupon_face, 0) },
@@ -156,8 +194,7 @@ export const exportsPage = {
           toast(errorMessage(err), 'err');
         }
       });
-    });
-  },
+    });  },
 };
 
 export default exportsPage;

@@ -33,7 +33,9 @@ async function openMember(view, ctx, member) {
       ['最近下单', fmtTime(detail.last_order_at)],
       ['R（距今天数）', `${detail.r_days ?? '—'} 天`],
       ['窗口内单数', fmtNum(detail.orders_window)],
-      ['窗口内金额', fmtMoney(detail.amount_window)],
+      ['窗口内毛额', fmtMoney(detail.gross_window)],
+      ['已核退款', fmtMoney(detail.refund_window)],
+      ['窗口内净额', `<b>${fmtMoney(detail.amount_window)}</b>`],
       ['RFM 得分', scoreBar(detail.r_score, detail.f_score, detail.m_score)],
       ['综合分', `<span class="mono">${Number(detail.composite_score || 0).toFixed(2)}</span>`],
       ['所属分群', badge(segmentTone(detail.segment_code), detail.segment_label || '未评分')],
@@ -129,7 +131,15 @@ export const membersPage = {
             { key: 'r_score', label: 'RFM', render: (row) => scoreBar(row.r_score, row.f_score, row.m_score) },
             { key: 'r_days', label: 'R(天)', className: 'num', render: (row) => row.r_days ?? '—' },
             { key: 'orders_window', label: '单数', className: 'num', render: (row) => fmtNum(row.orders_window) },
-            { key: 'amount_window', label: '金额', className: 'num', render: (row) => fmtMoney(row.amount_window, 0) },
+            {
+              key: 'amount_window',
+              label: '毛额 / 净额',
+              className: 'num',
+              render: (row) =>
+                `${fmtMoney(row.gross_window, 0)}<div class="mini muted">净 ${fmtMoney(row.amount_window, 0)}${
+                  row.refund_window ? ` · 退 ${fmtMoney(row.refund_window, 0)}` : ''
+                }</div>`,
+            },
             { key: 'purchase_rate', label: '券响应率', className: 'num', render: (row) => fmtPct(row.purchase_rate) },
             { key: 'composite_score', label: '综合分', className: 'num', render: (row) => Number(row.composite_score || 0).toFixed(2) },
           ],

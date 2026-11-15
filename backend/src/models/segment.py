@@ -25,6 +25,10 @@ class Segment(Base):
     avg_f_score: Mapped[float] = mapped_column(Float, default=0.0)
     avg_m_score: Mapped[float] = mapped_column(Float, default=0.0)
     avg_r_days: Mapped[float] = mapped_column(Float, default=0.0)
+    # 分群订单口径：毛额 / 已核对退款 / 净额（M 分与增量 GMV 用净额）
+    gross_amount: Mapped[float] = mapped_column(Float, default=0.0)
+    refund_amount: Mapped[float] = mapped_column(Float, default=0.0)
+    net_amount: Mapped[float] = mapped_column(Float, default=0.0)
     avg_amount_window: Mapped[float] = mapped_column(Float, default=0.0)
     purchase_rate: Mapped[float] = mapped_column(Float, default=0.0)
     avg_ticket: Mapped[float] = mapped_column(Float, default=0.0)

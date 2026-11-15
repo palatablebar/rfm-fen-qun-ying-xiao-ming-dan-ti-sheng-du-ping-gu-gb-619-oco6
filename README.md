@@ -11,39 +11,45 @@
   1. **分群阈值拍脑袋**：R/F/M 的「高/低」全凭主观，换个人做一次结果就变，没人能解释为什么这么切。
   2. **名单导出后不知道能带来多少增量**：只知道发了多少张、核销多少张，不知道「不发也会买」的那部分占多少。
   3. **预算有限，先发谁没依据**：40 万分到 8 类人群，先发给谁、每人给多少券，全靠开会拍。
+- **新增数据风险**：退款记录常跨周晚到回传，同一笔还可能重复回传；若直接按成交额分群，
+  高退货会员会凭毛额进入高分群，活动预算与预计 GMV 随之虚高。因此正式分群前必须先做**退款核对**。
 - **上下游**：POS 订单 / 小程序订单 → 本系统（会员与订单接入 → RFM 分位评分 → 八类分群 → 名单与预算 → 提升度与 ROI）→
   券平台（CSV 名单下发）/ 私域企微群。
 - **一天的工作剧本**：
   1. 09:10 门店 POS 日结文件同步完成，订单表新增 3.2 万单（演示库 30,000 单可在 8,000 人抽样上重放）。
-  2. 09:20 数据专员打开「RFM 分群」，看到快照日 2026-11-14、大盘购买率 2.81%、八个分群的 lift。
-  3. 09:25 运营管理员把权重从 0.3/0.3/0.4 调到 0.6/0.2/0.2，点「重算分群」：分位切点移动，分群人数随之变化，页面直接给出新阈值。
-  4. 09:40 在「名单与提升度」选「秋日会员日券」，把预算从 1,400 改成 2,000，试算看到哪几个分群被优先分配、哪几个「预算不足」。
-  5. 10:00 点「生成名单」，得到 A2026111401：覆盖 X 人、券预算 Y 元、预计增量 Z 单、整体 ROI R。
-  6. 10:10 数据专员点「确认名单」，管理员在「导出与审计」下载名单明细 CSV，交给券平台。
-  7. 14:00 门店只读角色登录，只能看到脱敏手机号，导出按钮置灰；直接调 `/api/exports/members.csv` 返回 403。
-  8. 次日 07:40 Celery worker 定时重算 RFM 并为进行中活动补一份名单，审计日志留痕。
+  2. 09:15 券平台回传上一周的退款明细（含跨周晚到与重试重复）。数据专员在「退款核对」导入批次：
+     重复回传自动识别、不重复冲减；无法归属与累计超过原单的记录单独列出。
+  3. 09:20 数据专员确认核对：批次从「待核对」进入「已核对」，分群按净额自动重算。
+  4. 09:20 数据专员打开「RFM 分群」，看到快照日 2026-11-14、大盘购买率 2.81%、八个分群的 lift。
+  5. 09:25 运营管理员把权重从 0.3/0.3/0.4 调到 0.6/0.2/0.2，点「重算分群」：分位切点移动，分群人数随之变化，页面直接给出新阈值。
+  6. 09:40 在「名单与提升度」选「秋日会员日券」，把预算从 1,400 改成 2,000，试算看到哪几个分群被优先分配、哪几个「预算不足」。
+  7. 10:00 点「生成名单」，得到 A2026111401：覆盖 X 人、券预算 Y 元、预计增量 Z 单、整体 ROI R。
+  8. 10:10 数据专员点「确认名单」，管理员在「导出与审计」下载名单明细 CSV，交给券平台。
+  9. 14:00 门店只读角色登录，只能看到脱敏手机号，导出按钮置灰；直接调 `/api/exports/members.csv` 返回 403。
+  10. 次日 07:40 Celery worker 定时重算 RFM 并为进行中活动补一份名单；若有未核对退款批次则跳过，审计日志留痕。
 
 ## 2. 角色与权限
 
 | 角色 | 账号 | 权限 | 典型动作 |
 |---|---|---|---|
-| 会员运营管理员 `admin` | `admin@rfmseg.io` | 配置 + 重算 + 生成名单 + 导出 + 审计 | 调 RFM 权重/窗口、改分群券面额、生成名单、导出、看审计 |
-| 会员数据专员 `analyst` | `analyst@rfmseg.io` | 看分群与 lift、确认名单、导出 | 试算预算、确认名单、导出分群表 |
-| 门店业务只读 `viewer` | `viewer@rfmseg.io` | 只读列表与详情（手机号脱敏） | 看分群、看会员、看名单；写/导出/审计一律 403 |
+| 会员运营管理员 `admin` | `admin@rfmseg.io` | 配置 + 重算 + 生成名单 + 退款核对 + 导出 + 审计 | 调 RFM 权重/窗口、改分群券面额、导入并核对退款、生成名单、导出、看审计 |
+| 会员数据专员 `analyst` | `analyst@rfmseg.io` | 看分群与 lift、退款核对、确认名单、导出 | 试算预算、导入退款批次并核对、确认名单、导出分群表 |
+| 门店业务只读 `viewer` | `viewer@rfmseg.io` | 只读列表与详情（手机号脱敏） | 看分群、看会员、看退款核对清单、看名单；写/导出/审计一律 403 |
 
 密码统一：`Demo@2026`。低权角色调用高权接口返回 **真实 HTTP 403**（`src/middlewares/rbac.py`，不靠前端隐藏）。
 未登录 401（`AUTH_MISSING`）、参数非法 422（`VALIDATION`）、重复自然键 409（`CONFLICT`）。
 
-## 3. 业务模块表（6 个）
+## 3. 业务模块表（7 个）
 
 | # | 模块 | 对应页面 | 主要 services / controller | 主要 API |
 |---|---|---|---|---|
 | ① | 会员与订单接入 | 会员与订单 `#/members` | `member_service` / `member_controller` | `GET /api/members`、`GET /api/members/{id}`、`GET /api/orders` |
 | ② | RFM 评分（算法 A） | RFM 分群 `#/segments` | `rfm_service`、`segment_service` / `segment_controller` | `POST /api/segments/recompute`、`GET /api/segments` |
 | ③ | 分群规则与券口径 | RFM 分群 `#/segments` | `segment_service` / `segment_controller` | `PATCH /api/segments/{id}` |
-| ④ | 名单生成（算法 B 落库） | 名单与提升度 `#/audiences` | `audience_service` / `audience_controller` | `POST /api/audiences`、`GET /api/audiences`、`PATCH /api/audiences/{id}/review` |
-| ⑤ | 提升度与预算分配（算法 B） | 名单与提升度 `#/audiences` | `lift_service`、`audience_service` / `campaign_controller` | `GET /api/campaigns`、`POST /api/campaigns`、`GET /api/campaigns/{id}/allocation` |
-| ⑥ | 导出与审计 | 导出与审计 `#/exports` | `export_service`、`audit_service` / `export_controller` | `GET /api/exports/{members,segments,audiences}.csv`、`GET /api/audit` |
+| ④ | 退款核对（晚到回传 / 异常隔离） | 退款核对 `#/reconciliation` | `reconciliation_service` / `reconciliation_controller` | `POST /api/reconciliations/batches`、`POST /api/reconciliations/{id}/confirm`、`GET /api/reconciliations/checklist` |
+| ⑤ | 名单生成（算法 B 落库） | 名单与提升度 `#/audiences` | `audience_service` / `audience_controller` | `POST /api/audiences`、`GET /api/audiences`、`PATCH /api/audiences/{id}/review` |
+| ⑥ | 提升度与预算分配（算法 B） | 名单与提升度 `#/audiences` | `lift_service`、`audience_service` / `campaign_controller` | `GET /api/campaigns`、`POST /api/campaigns`、`GET /api/campaigns/{id}/allocation` |
+| ⑦ | 导出与审计 | 导出与审计 `#/exports` | `export_service`、`audit_service` / `export_controller` | `GET /api/exports/{members,segments,audiences}.csv`、`GET /api/audit` |
 
 横切能力（不计入业务模块）：JWT + 三角色 RBAC、限流（Redis 固定窗口，写接口单独额度）、审计中间件、worker 心跳。
 登录页与总览是横切入口，也不算业务模块。
@@ -102,8 +108,7 @@ backend/
   scripts/{seed_demo.py,demo_config.py,worker_healthcheck.sh}
   migrations/  tests/
 frontend/
-  site/{index.html,css/{tokens,app}.css,js/{config,api,store,ui,app}.js,js/pages/*.js}
-docker-compose.yml  .env  README.md
+  site/{index.html,css/{tokens,app}.css,js/{config,api,store,ui,app}.js,js/pages/*.js}docker-compose.yml  .env  README.md
 ```
 
 ## 9. 环境变量
@@ -117,7 +122,8 @@ docker-compose.yml  .env  README.md
 
 1. 单人指标（快照日 `as_of` = 库内最新订单日期）：
    - `R` = `as_of − 最近一次下单日期`（天）；从未下单记 9999（分档必然最低）。
-   - `F` = 窗口内订单数；`M` = 窗口内订单金额合计。**窗口默认 365 天，可调 30~730 天**。
+   - `F` = 窗口内订单数；`M` = 窗口内订单金额合计 **减去已核对退款（净额）**。**窗口默认 365 天，可调 30~730 天**。
+   - 分群同时汇总订单毛额 / 退款额 / 净额：高退货会员按净额落档，不会凭成交额虚高进高分群。
 2. 分位切档：全量会员的 R / F / M 各算 20/40/60/80 分位（线性插值），值与切点比较得到 1~5 分；
    **同值必然同档**（只比较切点，不做名次排序，避免并列被拆开）。R 越小越好 → 分档反向。
 3. 综合分 = `0.3·R + 0.3·F + 0.4·M`（权重可配，三项之和必须为 1，否则 422）。
@@ -141,7 +147,28 @@ docker-compose.yml  .env  README.md
 5. **边际收益递减**：群内前 `core_share`（默认 0.6）为「高响应核心盘」按全效计算，超出部分乘 `tail_factor`（默认 0.6）。
 6. 增量：`Δp_s = p_s − p0`；增量人数 = `(核心盘人数 + 0.6 × 溢出人数) × Δp_s`；
    增量单量 = 增量人数 × `orders_per_converter`（默认 1.4）；增量 GMV = 增量单量 × 分群客单价（订单事实算出）。
+   **客单价按分群净额 / 毛额折算**，退款越多预计 GMV 越低。
 7. `ROI = 增量 GMV / 该群券预算`；整体 ROI = 总增量 GMV / 总花费。页面对每个分群展示这一整条推导。
+
+### 退款核对（`backend/src/services/reconciliation_service.py`）
+
+晚到退款常跨周回传，同一笔还可能重复。核对口径：
+
+1. **批次幂等**：批次以 `batch_key` 为自然键。同一批重试导入直接返回原批次，不新增退款记录、不重复冲减；
+   确认动作本身也幂等（重复确认不再次落账）。
+2. **重复回传**：退款笔以 `refund_no`（缺省时用「订单号 + 金额 + 日期」）为去重键。同一笔跨批次再次出现
+   记为 `duplicate`，`applied_amount = 0`，**不冲减净额**，在核对页「重复回传」清单单列。
+3. **异常单独列出**（`exceptions`，须逐条知晓才能确认）：
+   - 无法归属 `unattributable`：订单号不存在、会员号与原单不一致、金额非法；
+   - 累计超过原单 `over_refund`：历史已核对退款 + 本笔 > 订单毛额，只把剩余可退部分计入冲减，
+     超出部分记入 `exception_amount` 并列入异常清单。
+4. **核对门禁**：存在 `pending` 批次时，重算分群、名单试算/生成/确认、会员/分群/名单三类导出
+   一律 409 `REFUND_UNRECONCILED`（`tasks.py` 定时任务也会跳过），**未核对结果不能进入正式分群**。
+5. **确认落账**：批次从「待核对」进入「已核对」，随后按当前快照权重/窗口重算 R/F/M（M 与增量 GMV 用净额），
+   并刷新仍为「待确认」的名单口径；已确认/已推送名单保持不动。
+6. **逐项核对清单**（`GET /api/reconciliations/checklist`）逐项比对：订单毛额、退款额、净额、分群人数、
+   名单人数、名单毛额/退款/净额、活动预计 GMV；已核对状态下还会真实生成名单 CSV 并按行求和复核，
+   保证「页面 / 分群 / 导出」同源。待核对期间导出被冻结，导出列显式标注而不参与比对。
 
 ### seed 数量口径（`SEED_SUMMARY`）
 
@@ -155,6 +182,15 @@ docker-compose.yml  .env  README.md
 | `findings` | RFM 分群数（8） |
 | `pending` | 待确认名单数（2，对应 2 个活动） |
 
+退款回传也由 seed 确定性生成两个批次（`scripts/demo_config.py` → `REFUND_CONFIRMED_BATCH / REFUND_PENDING_BATCH`）：
+
+- `seed-refund-wk45`：36 笔，**已核对**，历史退款真实冲减；
+- `seed-refund-wk46`：26 笔，**待核对**，含 22 笔正常冲减、2 笔跨批重复回传（不冲减）、
+  1 笔订单号不存在（无法归属）、1 笔累计超过原单（只冲减剩余可退部分）。
+
+因此 seed 完成后页面初始停在「退款核对 · 待核对」，分群重算 / 名单生成 / 导出被冻结；
+在「退款核对」页确认核对（异常已列清单）后自动重算分群并刷新待确认名单，页面进入「已核对」。
+
 ## 11. 共享枚举出现位置
 
 | 枚举 | 后端 | 前端 |
@@ -164,6 +200,8 @@ docker-compose.yml  .env  README.md
 | 会员卡等级 `normal/silver/gold/black` | `backend/src/constants/enums.py` → `MemberTier` | `frontend/site/js/config.js` → `ENUMS.tier` |
 | 活动状态 `draft/active/closed` | `backend/src/constants/enums.py` → `CampaignStatus` | `frontend/site/js/config.js` → `ENUMS.campaignStatus` |
 | 名单状态 `pending/confirmed/pushed` | `backend/src/constants/enums.py` → `AudienceStatus` | `frontend/site/js/config.js` → `ENUMS.audienceStatus` |
+| 退款记录状态 `pending/applied/duplicate/unattributable/over_refund` | `backend/src/constants/enums.py` → `RefundStatus` | `frontend/site/js/config.js` → `ENUMS.refundStatus` |
+| 核对批次状态 `pending/confirmed` | `backend/src/constants/enums.py` → `ReconciliationStatus` | `frontend/site/js/config.js` → `ENUMS.reconciliationStatus` |
 | 订单渠道 `miniapp/store/delivery` | `backend/src/constants/enums.py` → `OrderChannel` | `frontend/site/js/config.js` → `ENUMS.channel` |
 | 分配状态 `allocated/deferred/ineligible` | `backend/src/services/lift_service.py` | `frontend/site/js/config.js` → `ENUMS.allocationStatus` |
 

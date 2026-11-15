@@ -32,6 +32,8 @@ def serialize_member(member: Member, *, mask: bool) -> dict:
         "last_order_at": iso_utc(member.last_order_at),
         "r_days": member.r_days,
         "orders_window": member.orders_window,
+        "gross_window": round(member.gross_window or 0.0, 2),
+        "refund_window": round(member.refund_window or 0.0, 2),
         "amount_window": round(member.amount_window or 0.0, 2),
         "r_score": member.r_score,
         "f_score": member.f_score,

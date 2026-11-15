@@ -20,6 +20,8 @@ CREATE TABLE members (
     joined_on       DATE         NOT NULL,
     last_order_at   TIMESTAMP,
     orders_window   INTEGER      NOT NULL DEFAULT 0,
+    gross_window    DOUBLE PRECISION NOT NULL DEFAULT 0,
+    refund_window   DOUBLE PRECISION NOT NULL DEFAULT 0,
     amount_window   DOUBLE PRECISION NOT NULL DEFAULT 0,
     purchase_rate   DOUBLE PRECISION NOT NULL DEFAULT 0,
     avg_ticket      DOUBLE PRECISION NOT NULL DEFAULT 0,
@@ -62,6 +64,9 @@ CREATE TABLE segments (
     avg_f_score         DOUBLE PRECISION NOT NULL DEFAULT 0,
     avg_m_score         DOUBLE PRECISION NOT NULL DEFAULT 0,
     avg_r_days          DOUBLE PRECISION NOT NULL DEFAULT 0,
+    gross_amount        DOUBLE PRECISION NOT NULL DEFAULT 0,
+    refund_amount       DOUBLE PRECISION NOT NULL DEFAULT 0,
+    net_amount          DOUBLE PRECISION NOT NULL DEFAULT 0,
     avg_amount_window   DOUBLE PRECISION NOT NULL DEFAULT 0,
     purchase_rate       DOUBLE PRECISION NOT NULL DEFAULT 0,
     avg_ticket          DOUBLE PRECISION NOT NULL DEFAULT 0,
@@ -102,6 +107,9 @@ CREATE TABLE audiences (
     status          VARCHAR(16) NOT NULL DEFAULT 'pending',
     budget          DOUBLE PRECISION NOT NULL DEFAULT 0,
     member_count    INTEGER     NOT NULL DEFAULT 0,
+    gross_amount    DOUBLE PRECISION NOT NULL DEFAULT 0,
+    refund_amount   DOUBLE PRECISION NOT NULL DEFAULT 0,
+    net_amount      DOUBLE PRECISION NOT NULL DEFAULT 0,
     spend           DOUBLE PRECISION NOT NULL DEFAULT 0,
     inc_orders      INTEGER     NOT NULL DEFAULT 0,
     inc_gmv         DOUBLE PRECISION NOT NULL DEFAULT 0,
@@ -130,3 +138,55 @@ CREATE TABLE audit_logs (
     seed_key        VARCHAR(120) UNIQUE,
     created_at      TIMESTAMP    NOT NULL
 );
+
+CREATE TABLE reconciliation_runs (
+    id                      SERIAL PRIMARY KEY,
+    run_no                  VARCHAR(32)  NOT NULL UNIQUE,
+    batch_key               VARCHAR(64)  NOT NULL UNIQUE,
+    status                  VARCHAR(16)  NOT NULL DEFAULT 'pending',
+    record_count            INTEGER      NOT NULL DEFAULT 0,
+    gross_amount            DOUBLE PRECISION NOT NULL DEFAULT 0,
+    refund_amount           DOUBLE PRECISION NOT NULL DEFAULT 0,
+    net_amount              DOUBLE PRECISION NOT NULL DEFAULT 0,
+    applied_count           INTEGER      NOT NULL DEFAULT 0,
+    duplicate_count         INTEGER      NOT NULL DEFAULT 0,
+    unattributable_count    INTEGER      NOT NULL DEFAULT 0,
+    over_refund_count       INTEGER      NOT NULL DEFAULT 0,
+    exception_count         INTEGER      NOT NULL DEFAULT 0,
+    exception_amount        DOUBLE PRECISION NOT NULL DEFAULT 0,
+    exceptions              JSON,
+    per_order               JSON,
+    note                    TEXT,
+    operator_email          VARCHAR(160) NOT NULL,
+    confirmed_by            VARCHAR(160),
+    confirmed_at            TIMESTAMP,
+    acknowledged_exceptions BOOLEAN      NOT NULL DEFAULT FALSE,
+    seed_key                VARCHAR(120) UNIQUE,
+    created_at              TIMESTAMP    NOT NULL,
+    updated_at              TIMESTAMP    NOT NULL
+);
+CREATE INDEX ix_reconciliation_runs_status ON reconciliation_runs (status);
+
+CREATE TABLE refund_records (
+    id                SERIAL PRIMARY KEY,
+    record_key        VARCHAR(200) NOT NULL UNIQUE,
+    batch_key         VARCHAR(64)  NOT NULL,
+    dedupe_key        VARCHAR(160) NOT NULL,
+    refund_no         VARCHAR(48)  NOT NULL,
+    order_no          VARCHAR(32)  NOT NULL,
+    member_no         VARCHAR(24),
+    amount            DOUBLE PRECISION NOT NULL DEFAULT 0,
+    refunded_at       TIMESTAMP    NOT NULL,
+    status            VARCHAR(16)  NOT NULL DEFAULT 'pending',
+    applied_amount    DOUBLE PRECISION NOT NULL DEFAULT 0,
+    exception_amount  DOUBLE PRECISION NOT NULL DEFAULT 0,
+    exception_reason  VARCHAR(160),
+    order_id          INTEGER REFERENCES orders(id) ON DELETE SET NULL,
+    member_id         INTEGER REFERENCES members(id) ON DELETE SET NULL,
+    run_id            INTEGER,
+    raw               JSON,
+    created_at        TIMESTAMP    NOT NULL
+);
+CREATE INDEX ix_refund_records_batch_status ON refund_records (batch_key, status);
+CREATE INDEX ix_refund_records_order_status ON refund_records (order_no, status);
+CREATE INDEX ix_refund_records_dedupe ON refund_records (dedupe_key);

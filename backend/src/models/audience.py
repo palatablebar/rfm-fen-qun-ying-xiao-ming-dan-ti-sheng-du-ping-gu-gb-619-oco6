@@ -19,6 +19,10 @@ class Audience(Base):
     status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
     budget: Mapped[float] = mapped_column(Float, default=0.0)
     member_count: Mapped[int] = mapped_column(Integer, default=0)
+    # 名单覆盖会员的订单口径（毛额 - 已核对退款 = 净额），用于页面/分群/导出逐项对账
+    gross_amount: Mapped[float] = mapped_column(Float, default=0.0)
+    refund_amount: Mapped[float] = mapped_column(Float, default=0.0)
+    net_amount: Mapped[float] = mapped_column(Float, default=0.0)
     spend: Mapped[float] = mapped_column(Float, default=0.0)
     inc_orders: Mapped[int] = mapped_column(Integer, default=0)
     inc_gmv: Mapped[float] = mapped_column(Float, default=0.0)

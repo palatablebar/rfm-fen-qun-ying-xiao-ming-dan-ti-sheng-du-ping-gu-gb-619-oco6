@@ -8,6 +8,7 @@ ERROR_MESSAGES: dict[str, str] = {
     "NOT_FOUND": "资源不存在",
     "VALIDATION": "请求参数不合法",
     "CONFLICT": "数据冲突，请刷新后重试",
+    "REFUND_UNRECONCILED": "存在未核对的退款批次，不能进入正式分群 / 名单",
     "RATE_LIMITED": "请求过于频繁，请稍后再试",
     "INTERNAL": "服务内部错误",
 }

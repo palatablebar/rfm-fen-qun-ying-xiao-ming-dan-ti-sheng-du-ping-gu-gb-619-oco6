@@ -1,19 +1,22 @@
-"""幂等 seed：3 账号 / 8,000 会员 / 30,000 订单 / 8 分群 / 2 活动 / 2 份名单。
+"""幂等 seed：3 账号 / 8,000 会员 / 30,000 订单 / 8 分群 / 2 活动 / 2 份名单 / 2 批退款。
 
 自然键 upsert：
   users.email / members.member_no / orders.order_no
   segments.code（只更新快照字段，不动运营改过的券面额）
   campaigns.code / audiences.seed_key
+  reconciliation_runs.batch_key / refund_records.record_key
   audit_logs.seed_key
 
 重复执行不新增、不覆盖已确认名单；SEED_SUMMARY 两次逐字一致。
+退款批次：wk45 已核对（历史冲减），wk46 晚到待核对（含重复 / 无法归属 / 累计超额），
+seed 完成后页面停在「退款核对 · 待核对」，正式分群与导出被冻结。
 数量口径（与 batch-plan 的 seed 段对应）：
   sources = 会员数、runs = 订单数、findings = 分群数、pending = 待确认名单数。
 """
 from __future__ import annotations
 
 import random
-from datetime import date, datetime, time, timedelta
+from datetime import datetime, time, timedelta
 
 from sqlalchemy import func, insert, select
 
@@ -22,6 +25,7 @@ from src.models.audit import AuditLog
 from src.models.campaign import Campaign
 from src.models.member import Member
 from src.models.order import Order
+from src.models.refund import RefundRecord
 from src.models.segment import Segment
 from src.models.user import User
 from src.services import audience_service, segment_service
@@ -40,12 +44,16 @@ from scripts.demo_config import (
     ORDER_TARGET,
     ORG,
     RANDOM_SEED,
+    REFUND_CONFIRMED_BATCH,
+    REFUND_PENDING_BATCH,
     SEED_ANCHOR,
     SEED_AUDIENCES,
     SEGMENT_COUPON,
     STORES,
     SURNAMES,
 )
+
+REFUND_BASE_TIME = datetime.combine(SEED_ANCHOR, time(10, 0))
 
 
 def _pick_weighted(rng: random.Random, items: list[tuple[str, float]]) -> str:
@@ -276,6 +284,100 @@ def ensure_audiences(db) -> int:
     return db.scalar(select(func.count()).select_from(Audience)) or 0
 
 
+def _refund_rows(orders: list[Order], spec: dict) -> list[dict]:
+    """按固定顺序抽订单造退款行；同一批再叠加「重复回传」与「无法归属」两类脏数据。"""
+    rows: list[dict] = []
+    ordered = sorted(orders, key=lambda item: item.order_no)
+    if not ordered:
+        return rows
+    picked = ordered[spec["order_offset"] : spec["order_offset"] + spec["count"]]
+    low, high = spec["days_ago"]
+    for index, order in enumerate(picked):
+        span = low + (index % max(1, high - low + 1))
+        rows.append(
+            {
+                "order_no": order.order_no,
+                "refund_no": f"RF-{spec['batch_key'][-6:]}-{index + 1:03d}",
+                "member_no": None,
+                "amount": round(float(order.amount) * spec["ratio"], 2),
+                "refunded_at": (REFUND_BASE_TIME - timedelta(days=span)).isoformat(sep=" "),
+            }
+        )
+    return rows
+
+
+def ensure_reconciliations(db) -> tuple[int, int]:
+    """两批退款回传：wk45 已核对（历史冲减），wk46 晚到待核对（含重复 / 异常）。"""
+    from src.models.audience import Audience
+    from src.models.reconciliation import ReconciliationRun
+    from src.services import reconciliation_service
+
+    if db.scalar(select(func.count()).select_from(ReconciliationRun)) > 0:
+        return 0, 0
+
+    orders = db.scalars(select(Order).order_by(Order.order_no)).all()
+    applied = 0
+
+    # 1) 已核对批次：真实冲减历史退款（确认时会重算分群并刷新待确认名单）
+    confirmed_rows = _refund_rows(orders, REFUND_CONFIRMED_BATCH)
+    run, _created = reconciliation_service.import_batch(
+        db,
+        batch_key=REFUND_CONFIRMED_BATCH["batch_key"],
+        records=confirmed_rows,
+        operator_email="seed@rfmseg.io",
+        note=REFUND_CONFIRMED_BATCH["note"],
+    )
+    reconciliation_service.confirm_run(db, run, actor="seed@rfmseg.io", recompute=True)
+    applied = run.record_count
+
+    # 2) 待核对批次：在真实退款基础上叠加重试重复与无法归属，页面停在「待核对」
+    pending_rows = _refund_rows(orders, REFUND_PENDING_BATCH)
+    duplicate_source = db.scalars(
+        select(RefundRecord).where(RefundRecord.batch_key == REFUND_CONFIRMED_BATCH["batch_key"]).limit(2)
+    ).all()
+    for record in duplicate_source:
+        pending_rows.append(
+            {
+                "order_no": record.order_no,
+                "refund_no": record.refund_no,  # 同退款笔再次回传 → duplicate
+                "amount": record.amount,
+                "refunded_at": (REFUND_BASE_TIME - timedelta(days=3)).isoformat(sep=" "),
+            }
+        )
+    pending_rows.append(
+        {
+            "order_no": REFUND_PENDING_BATCH["unknown_order_no"],  # 订单号不存在 → unattributable
+            "refund_no": "RF-WK46-UNKNOWN-1",
+            "amount": 26.0,
+            "refunded_at": (REFUND_BASE_TIME - timedelta(days=2)).isoformat(sep=" "),
+        }
+    )
+    # 累计超过原单：对已核销订单再退一笔远超剩余可退金额
+    over_order = next(
+        (order for order in sorted(orders, key=lambda item: item.order_no) if order.order_no not in {row["order_no"] for row in pending_rows}),
+        None,
+    )
+    if over_order is not None:
+        pending_rows.append(
+            {
+                "order_no": over_order.order_no,
+                "refund_no": "RF-WK46-OVER-1",
+                "amount": round(float(over_order.amount) + 40.0, 2),  # 超出原单 → over_refund
+                "refunded_at": (REFUND_BASE_TIME - timedelta(days=1)).isoformat(sep=" "),
+            }
+        )
+    reconciliation_service.import_batch(
+        db,
+        batch_key=REFUND_PENDING_BATCH["batch_key"],
+        records=pending_rows,
+        operator_email="seed@rfmseg.io",
+        note=REFUND_PENDING_BATCH["note"],
+    )
+    db.flush()
+    pending = db.scalar(select(func.count()).select_from(Audience).where(Audience.status == "pending")) or 0
+    return applied, pending
+
+
 def ensure_audit(db) -> None:
     seeds = [
         ("seed-audit-1", "admin@rfmseg.io", "admin", "segment.recompute", "segment", {"weights": [0.3, 0.3, 0.4]}),
@@ -307,6 +409,7 @@ def seed_all() -> dict:
         segments = ensure_segments(db)
         ensure_campaigns(db)
         ensure_audiences(db)
+        ensure_reconciliations(db)
         ensure_audit(db)
         audiences = db.scalar(select(func.count()).select_from(Audience)) or 0
         pending = db.scalar(select(func.count()).select_from(Audience).where(Audience.status == "pending")) or 0

@@ -6,6 +6,7 @@ from src.constants.roles import (
     AUDIT_ROLES,
     EXPORT_ROLES,
     PERMISSIONS,
+    RECONCILIATION_ROLES,
     SEGMENT_ADMIN_ROLES,
     has_permission,
 )
@@ -42,3 +43,15 @@ def test_phone_masking():
     assert mask_phone("13812345678") == "138****5678"
     assert mask_phone("") == "***"
     assert mask_phone("12345") == "***"
+
+
+def test_reconciliation_permissions():
+    viewer = Role.VIEWER.value
+    analyst = Role.ANALYST.value
+    admin = Role.ADMIN.value
+    # 只读角色可以看核对清单，但不能写入/确认
+    assert has_permission(viewer, "refund:read") is True
+    assert has_permission(viewer, "refund:reconcile") is False
+    assert viewer not in RECONCILIATION_ROLES
+    assert analyst in RECONCILIATION_ROLES and admin in RECONCILIATION_ROLES
+    assert has_permission(analyst, "refund:reconcile") is True

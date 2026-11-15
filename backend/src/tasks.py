@@ -35,6 +35,12 @@ def daily_refresh() -> dict:
     from src.services import audit_service, audience_service, segment_service
 
     with session_scope() as db:
+        from src.services import reconciliation_service
+
+        if reconciliation_service.pending_run(db) is not None:
+            # 有未核对的退款批次时，定时任务不推进正式分群 / 名单
+            logger.info("daily refresh skipped: pending refund reconciliation")
+            return {"members": 0, "audiences": 0, "skipped": "refund_pending"}
         result = segment_service.recompute(db)
         audit_service.record(
             db,

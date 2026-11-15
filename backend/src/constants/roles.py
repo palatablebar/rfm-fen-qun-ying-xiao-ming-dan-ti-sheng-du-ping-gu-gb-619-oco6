@@ -24,6 +24,7 @@ PERMISSIONS: dict[str, set[str]] = {
         "segment:read", "segment:recompute", "segment:write",
         "campaign:read", "campaign:write",
         "audience:read", "audience:generate", "audience:confirm",
+        "refund:reconcile",
         "export:read", "audit:read", "overview:read",
     },
     Role.ANALYST.value: {
@@ -31,10 +32,11 @@ PERMISSIONS: dict[str, set[str]] = {
         "segment:read",
         "campaign:read",
         "audience:read", "audience:confirm",
+        "refund:reconcile",
         "export:read", "overview:read",
     },
     Role.VIEWER.value: {
-        "member:read", "order:read", "segment:read", "campaign:read", "audience:read", "overview:read",
+        "member:read", "order:read", "segment:read", "campaign:read", "audience:read", "refund:read", "overview:read",
     },
 }
 
@@ -42,6 +44,7 @@ SEGMENT_ADMIN_ROLES = (Role.ADMIN.value,)
 CAMPAIGN_WRITE_ROLES = (Role.ADMIN.value,)
 AUDIENCE_GENERATE_ROLES = (Role.ADMIN.value,)
 AUDIENCE_CONFIRM_ROLES = (Role.ADMIN.value, Role.ANALYST.value)
+RECONCILIATION_ROLES = (Role.ADMIN.value, Role.ANALYST.value)
 EXPORT_ROLES = (Role.ADMIN.value, Role.ANALYST.value)
 AUDIT_ROLES = (Role.ADMIN.value,)
 READ_ROLES = (Role.ADMIN.value, Role.ANALYST.value, Role.VIEWER.value)

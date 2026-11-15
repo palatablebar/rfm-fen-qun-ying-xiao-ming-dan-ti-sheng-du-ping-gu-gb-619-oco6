@@ -37,6 +37,9 @@ def overview(db: Session) -> dict:
     members_total = db.scalar(select(func.count()).select_from(Member)) or 0
     orders_total = db.scalar(select(func.count()).select_from(Order)) or 0
     gmv_total = db.scalar(select(func.sum(Order.amount))) or 0.0
+    from src.services import reconciliation_service
+
+    reconciliation = reconciliation_service.summary(db)
 
     segment_rows = db.scalars(select(Segment).order_by(Segment.sort_order)).all()
     segments = [
@@ -48,6 +51,9 @@ def overview(db: Session) -> dict:
             "lift": round(row.lift or 0.0, 4),
             "purchase_rate": round(row.purchase_rate or 0.0, 6),
             "coupon_face": round(row.coupon_face or 0.0, 2),
+            "gross_amount": round(row.gross_amount or 0.0, 2),
+            "refund_amount": round(row.refund_amount or 0.0, 2),
+            "net_amount": round(row.net_amount or 0.0, 2),
         }
         for row in segment_rows
     ]
@@ -96,6 +102,15 @@ def overview(db: Session) -> dict:
         "members_total": members_total,
         "orders_total": orders_total,
         "gmv_total": round(float(gmv_total), 2),
+        "gross_total": reconciliation["dataset_gross"],
+        "refund_total": reconciliation["dataset_refund"],
+        "net_total": reconciliation["dataset_net"],
+        "reconciliation": {
+            "status": reconciliation["status"],
+            "status_label": reconciliation["status_label"],
+            "can_enter_formal": reconciliation["can_enter_formal"],
+            "pending_run": reconciliation["pending_run"],
+        },
         "orders_30d": int(recent_30),
         "segments": segments,
         "tiers": tiers,

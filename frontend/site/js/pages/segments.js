@@ -40,7 +40,10 @@ async function openSegment(view, ctx, segment) {
       ['人数 / 占比', `${fmtNum(segment.member_count)} / ${fmtPct(segment.share, 2)}`],
       ['平均 RFM', `<span class="mono">${Number(segment.avg_r_score).toFixed(2)} / ${Number(segment.avg_f_score).toFixed(2)} / ${Number(segment.avg_m_score).toFixed(2)}</span>`],
       ['平均 R 天数', `${Number(segment.avg_r_days || 0).toFixed(1)} 天`],
-      ['人均窗口金额', fmtMoney(segment.avg_amount_window)],
+      ['订单毛额', fmtMoney(segment.gross_amount)],
+      ['已核退款', fmtMoney(segment.refund_amount)],
+      ['订单净额', `<b>${fmtMoney(segment.net_amount)}</b>`],
+      ['人均窗口净额', fmtMoney(segment.avg_amount_window)],
       ['分群购买率', fmtPct(segment.purchase_rate)],
       ['提升度 lift', `<span class="lift-pill ${liftTone(segment.lift)}">${fmtLift(segment.lift)}</span>`],
       ['券面额', fmtMoney(segment.coupon_face, 0)],
@@ -119,6 +122,17 @@ export const segmentsPage = {
           <span class="meta">快照 ${esc((data.as_of || '').slice(0, 10) || '—')} · 会员 ${fmtNum(data.members_total)} · 大盘购买率 ${fmtPct(data.global_purchase_rate)}</span>
         </div>
         <div class="panel-body" style="display:grid;gap:14px">
+          <div class="rule-chipline">
+            <span class="rule-chip">订单毛额 ${fmtMoney(data.gross_total, 0)}</span>
+            <span class="rule-chip">已核退款 ${fmtMoney(data.refund_total, 0)}</span>
+            <span class="rule-chip">净额 ${fmtMoney(data.net_total, 0)}</span>
+            <span class="rule-chip">M 分按净额落档</span>
+            ${
+              data.reconciliation_status === 'confirmed'
+                ? '<span class="rule-chip">退款已核对</span>'
+                : `<span class="rule-chip">退款待核对 · ${esc(data.reconciliation_run_no || '')}</span>`
+            }
+          </div>
           <form id="recompute-form" class="filter-bar">
             <div class="weights" style="flex:1">
               ${field({ label: 'R 权重', name: 'weight_r', type: 'number', value: Number(state.weight_r).toFixed(1), attrs: 'step="0.1" min="0" max="1"' })}
@@ -162,6 +176,16 @@ export const segmentsPage = {
             { key: 'rule_text', label: '规则', render: (row) => `<span class="mono muted">${esc(row.rule_text)}</span>` },
             { key: 'member_count', label: '人数', className: 'num', render: (row) => fmtNum(row.member_count) },
             { key: 'share', label: '占比', className: 'num', render: (row) => fmtPct(row.share, 2) },
+            {
+              key: 'gross_amount',
+              label: '毛额 / 退款 / 净额',
+              className: 'num',
+              render: (row) =>
+                `${fmtMoney(row.gross_amount, 0)}<div class="mini muted">退 ${fmtMoney(row.refund_amount, 0)} · 净 ${fmtMoney(
+                  row.net_amount,
+                  0,
+                )}</div>`,
+            },
             {
               key: 'scores',
               label: '平均 RFM',
@@ -231,6 +255,12 @@ export const segmentsPage = {
         const item = data.items.find((entry) => String(entry.id) === row.dataset.id);
         if (item) openSegment(view, ctx, item);
       });
+    });
+    view.querySelector('[data-testid=recompute]')?.addEventListener('click', (event) => {
+      if (data.reconciliation_status !== 'confirmed') {
+        toast('退款待核对：请先在「退款核对」完成核对，再重算正式分群', 'err');
+        event.preventDefault();
+      }
     });
   },
 };

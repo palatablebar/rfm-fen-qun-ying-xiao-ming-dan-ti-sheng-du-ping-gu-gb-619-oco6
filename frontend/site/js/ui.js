@@ -140,6 +140,7 @@ export function toast(message, tone = '') {
 export function errorMessage(err) {
   if (!err) return '未知错误';
   if (err.code === 'FORBIDDEN') return '当前角色没有这个操作的权限';
+  if (err.code === 'REFUND_UNRECONCILED') return '存在未核对的退款批次，请先完成退款核对';
   return err.message || '请求失败';
 }
 

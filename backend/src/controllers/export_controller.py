@@ -4,7 +4,7 @@ from __future__ import annotations
 from fastapi import Request, Response
 from sqlalchemy.orm import Session
 
-from src.services import audit_service, export_service
+from src.services import audit_service, export_service, reconciliation_service
 from src.utils.csv_export import csv_response_headers
 
 
@@ -13,6 +13,7 @@ def _response(content: bytes, filename: str) -> Response:
 
 
 def members_csv(db: Session, principal: dict, request: Request) -> Response:
+    reconciliation_service.require_reconciled(db)
     content = export_service.members_csv(db)
     audit_service.record(
         db,
@@ -29,6 +30,7 @@ def members_csv(db: Session, principal: dict, request: Request) -> Response:
 
 
 def segments_csv(db: Session, principal: dict, request: Request) -> Response:
+    reconciliation_service.require_reconciled(db)
     content = export_service.segments_csv(db)
     audit_service.record(
         db,
@@ -45,6 +47,7 @@ def segments_csv(db: Session, principal: dict, request: Request) -> Response:
 
 
 def audiences_csv(db: Session, audience_id: int | None, principal: dict, request: Request) -> Response:
+    reconciliation_service.require_reconciled(db)
     content = export_service.audience_csv(db, audience_id)
     audit_service.record(
         db,
